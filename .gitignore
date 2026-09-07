@@ -1,0 +1,32 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local Windows SDK/toolchain workarounds. These are machine-specific: they exist only
+# to work around a Visual Studio install that has the C++ tools but not the CRT/SDK
+# libraries. See "Building" in README.md for the supported setup.
+.tools/
+.sdk-layout/
+.sdk-env.sh
+build-release.bat
