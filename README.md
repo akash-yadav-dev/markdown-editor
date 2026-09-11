@@ -50,7 +50,8 @@ present too; if not, the installer will prompt for it.
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 
 From a terminal, pass a Markdown path to open it in the editor. Add `--preview` to open a separate
-read-only preview window that refreshes as the file changes.
+read-only preview window that refreshes as the file changes. Paths may be absolute or relative to
+the terminal's current folder, for example `markdown-editor --preview README.md`.
 
 Middle-clicking a tab closes it.
 

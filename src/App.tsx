@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { SplitPane } from "./components/SplitPane";
 import { TabBar } from "./components/TabBar";
@@ -364,6 +365,9 @@ function EditorApp() {
       if (startup) {
         if (startup.preview) {
           openPreviewWindow(startup.path);
+          // A preview launch should not leave the automatically-created editor
+          // window behind. The preview window remains owned by this process.
+          void getCurrentWindow().close();
           return;
         }
         const alreadyOpen = restored.findIndex((entry) => entry.tab.path === startup.path);

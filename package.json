@@ -1,7 +1,7 @@
 {
   "name": "markdown-editor",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A small, fast, offline Markdown editor for Windows",
   "license": "MIT",
   "author": "Akash Yadav",

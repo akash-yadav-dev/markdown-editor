@@ -4,6 +4,7 @@ mod file_service;
 use std::sync::Mutex;
 
 use tauri::{Emitter, Manager};
+use std::path::PathBuf;
 
 pub struct AppState {
     pub startup_file: Mutex<Option<(String, bool)>>,
@@ -11,19 +12,29 @@ pub struct AppState {
 
 /// The first CLI argument is the file path Windows passes when the app is
 /// launched via double-click or "Open with" on a .md file.
+fn resolve_path(path: String, cwd: Option<&str>) -> String {
+    let candidate = PathBuf::from(&path);
+    if candidate.is_absolute() {
+        return path;
+    }
+    let base = cwd.map(PathBuf::from).or_else(|| std::env::current_dir().ok());
+    base.map(|dir| dir.join(candidate).to_string_lossy().into_owned()).unwrap_or(path)
+}
+
 fn startup_args() -> (Option<String>, bool) {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let preview = args.iter().any(|arg| arg == "--preview" || arg == "preview");
     let path = args.into_iter().find(|arg| !arg.starts_with('-') && arg != "preview");
-    (path, preview)
+    (path.map(|value| resolve_path(value, None)), preview)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             let preview = argv.iter().any(|arg| arg == "--preview" || arg == "preview");
-            let path = argv.into_iter().skip(1).find(|arg| !arg.starts_with('-') && arg != "preview");
+            let path = argv.into_iter().skip(1).find(|arg| !arg.starts_with('-') && arg != "preview")
+                .map(|value| resolve_path(value, Some(&cwd)));
             if let Some(path) = path {
                 let _ = app.emit(if preview { "open-preview" } else { "open-file" }, path);
             }
