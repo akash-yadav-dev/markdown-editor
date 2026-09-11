@@ -30,3 +30,8 @@ dist-ssr
 .sdk-layout/
 .sdk-env.sh
 build-release.bat
+
+# Local xwin SDK/CRT caches (recreated by the release setup documented in docs/RELEASING.md)
+.xwin/
+.xwin-cache/
+.xwin-tool/
