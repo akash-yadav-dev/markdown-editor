@@ -1,6 +1,27 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+
+let previewSequence = 0;
+
+export function openPreviewWindow(path: string): void {
+  previewSequence += 1;
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.searchParams.set("previewPath", path);
+  url.hash = "";
+  const preview = new WebviewWindow(`preview-${previewSequence}`, {
+    url: url.toString(),
+    title: "Markdown Preview",
+    width: 960,
+    height: 720,
+    minWidth: 480,
+    minHeight: 360,
+    center: true,
+  });
+  void preview.once("tauri://error", (event) => console.error("Could not create preview window", event));
+}
 
 export function setWindowTitle(title: string): Promise<void> {
   return getCurrentWindow().setTitle(title);

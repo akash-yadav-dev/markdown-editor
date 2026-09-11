@@ -6,22 +6,26 @@ use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
-    pub startup_file: Mutex<Option<String>>,
+    pub startup_file: Mutex<Option<(String, bool)>>,
 }
 
 /// The first CLI argument is the file path Windows passes when the app is
 /// launched via double-click or "Open with" on a .md file.
-fn startup_file_from_args() -> Option<String> {
-    std::env::args().nth(1).filter(|arg| !arg.starts_with('-'))
+fn startup_args() -> (Option<String>, bool) {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let preview = args.iter().any(|arg| arg == "--preview" || arg == "preview");
+    let path = args.into_iter().find(|arg| !arg.starts_with('-') && arg != "preview");
+    (path, preview)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            let path = argv.into_iter().skip(1).find(|arg| !arg.starts_with('-'));
+            let preview = argv.iter().any(|arg| arg == "--preview" || arg == "preview");
+            let path = argv.into_iter().skip(1).find(|arg| !arg.starts_with('-') && arg != "preview");
             if let Some(path) = path {
-                let _ = app.emit("open-file", path);
+                let _ = app.emit(if preview { "open-preview" } else { "open-file" }, path);
             }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
@@ -31,7 +35,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState {
-            startup_file: Mutex::new(startup_file_from_args()),
+            startup_file: Mutex::new({
+                let (path, preview) = startup_args();
+                path.map(|path| (path, preview))
+            }),
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_startup_file,

@@ -6,10 +6,11 @@ import "./preview.css";
 
 interface PreviewProps {
   content: string;
+  basePath?: string;
 }
 
-export function Preview({ content }: PreviewProps) {
-  const html = useMemo(() => renderMarkdown(content), [content]);
+export function Preview({ content, basePath }: PreviewProps) {
+  const html = useMemo(() => renderMarkdown(content, basePath), [content, basePath]);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {

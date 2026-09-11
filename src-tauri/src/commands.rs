@@ -5,11 +5,11 @@ use crate::AppState;
 
 #[tauri::command]
 pub async fn get_startup_file(state: State<'_, AppState>) -> Result<Option<OpenedFile>, String> {
-    let path = {
+    let startup = {
         let mut guard = state.startup_file.lock().unwrap();
         guard.take()
     };
-    let Some(path) = path else {
+    let Some((path, preview)) = startup else {
         return Ok(None);
     };
     let content = tauri::async_runtime::spawn_blocking({
@@ -18,7 +18,7 @@ pub async fn get_startup_file(state: State<'_, AppState>) -> Result<Option<Opene
     })
     .await
     .map_err(|e| e.to_string())??;
-    Ok(Some(OpenedFile { path, content }))
+    Ok(Some(OpenedFile { path, content, preview }))
 }
 
 /// Escape hatch for quitting. `Window::destroy` is a core command gated behind the

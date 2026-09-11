@@ -8,6 +8,7 @@ use serde::Serialize;
 pub struct OpenedFile {
     pub path: String,
     pub content: String,
+    pub preview: bool,
 }
 
 pub fn read_file(path: &str) -> Result<String, String> {
@@ -39,7 +40,7 @@ pub fn open_file_via_dialog() -> Result<Option<OpenedFile>, String> {
     };
     let path = path.to_string_lossy().to_string();
     let content = read_file(&path)?;
-    Ok(Some(OpenedFile { path, content }))
+    Ok(Some(OpenedFile { path, content, preview: false }))
 }
 
 pub fn save_file_as_via_dialog(

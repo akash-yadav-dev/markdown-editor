@@ -17,7 +17,7 @@ export function TabBar({ tabs, activeId, onSelect, onClose, onNew }: TabBarProps
     <div className="tab-bar" role="tablist" aria-label="Open documents">
       <div className="tab-strip">
         {tabs.map((tab) => {
-          const name = tab.path ? getFileName(tab.path) : "Untitled.md";
+          const name = tab.path ? getFileName(tab.path) : tab.untitledName ?? "Untitled 1.md";
           const isActive = tab.id === activeId;
           return (
             <div

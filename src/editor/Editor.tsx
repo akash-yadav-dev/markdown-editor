@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { redo, redoDepth, undo, undoDepth } from "@codemirror/commands";
 
 import { markdown } from "./markdownLanguage";
 import { editorSetup } from "./setup";
@@ -15,6 +16,10 @@ export interface EditorHandle {
   focus: () => void;
   /** Drops the retained state for a closed tab. */
   releaseDoc: (docId: string) => void;
+  undo: () => boolean;
+  redo: () => boolean;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
 }
 
 interface EditorProps {
@@ -24,7 +29,8 @@ interface EditorProps {
   initialContent: string;
   theme: ThemeName;
   onDirty: (docId: string) => void;
-  /** Debounced (~200ms) full-document text, for panes that show a live preview. */
+  onHistoryChange: (docId: string, canUndo: boolean, canRedo: boolean) => void;
+  /** Debounced (~200ms) full-document text, used by live preview and draft recovery. */
   onChangeContent?: (docId: string, content: string) => void;
 }
 
@@ -43,7 +49,7 @@ const themeCompartment = new Compartment();
  * document exactly as it was left rather than rebuilding it from text.
  */
 export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
-  { docId, initialContent, theme, onDirty, onChangeContent },
+  { docId, initialContent, theme, onDirty, onHistoryChange, onChangeContent },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -59,6 +65,8 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   themeRef.current = theme;
   const onDirtyRef = useRef(onDirty);
   onDirtyRef.current = onDirty;
+  const onHistoryChangeRef = useRef(onHistoryChange);
+  onHistoryChangeRef.current = onHistoryChange;
   const onChangeContentRef = useRef(onChangeContent);
   onChangeContentRef.current = onChangeContent;
 
@@ -70,18 +78,18 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         markdown(),
         themeCompartment.of(getEditorTheme(themeRef.current)),
         EditorView.updateListener.of((update) => {
-          if (!update.docChanged) return;
-          if (!dirtyRef.current.has(id)) {
+          if (update.docChanged && !dirtyRef.current.has(id)) {
             dirtyRef.current.add(id);
             onDirtyRef.current(id);
           }
-          if (onChangeContentRef.current) {
+          if (update.docChanged && onChangeContentRef.current) {
             clearTimeout(debounceRef.current);
             const doc = update.state.doc;
             debounceRef.current = setTimeout(() => {
               onChangeContentRef.current?.(id, doc.toString());
             }, LIVE_PREVIEW_DEBOUNCE_MS);
           }
+          onHistoryChangeRef.current(id, undoDepth(update.state) > 0, redoDepth(update.state) > 0);
         }),
       ],
     }),
@@ -103,6 +111,10 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         docsRef.current.delete(id);
         dirtyRef.current.delete(id);
       },
+      undo: () => (viewRef.current ? undo(viewRef.current) : false),
+      redo: () => (viewRef.current ? redo(viewRef.current) : false),
+      canUndo: () => (viewRef.current ? undoDepth(viewRef.current.state) > 0 : false),
+      canRedo: () => (viewRef.current ? redoDepth(viewRef.current.state) > 0 : false),
     }),
     [],
   );
@@ -115,6 +127,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     const state = createStateRef.current(id, initialContentRef.current);
     docsRef.current.set(id, { state, scrollTop: 0 });
     activeDocRef.current = id;
+    onHistoryChangeRef.current(id, undoDepth(state) > 0, redoDepth(state) > 0);
 
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
@@ -163,6 +176,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     view.dispatch({ effects: themeCompartment.reconfigure(getEditorTheme(themeRef.current)) });
     view.scrollDOM.scrollTop = incoming.scrollTop;
     activeDocRef.current = docId;
+    onHistoryChangeRef.current(docId, undoDepth(incoming.state) > 0, redoDepth(incoming.state) > 0);
     view.focus();
   }, [docId]);
 

@@ -27,3 +27,7 @@ export function saveFileAs(content: string, defaultName?: string): Promise<strin
 export function onFileOpenRequested(handler: (path: string) => void): Promise<UnlistenFn> {
   return listen<string>("open-file", (event) => handler(event.payload));
 }
+
+export function onPreviewRequested(handler: (path: string) => void): Promise<UnlistenFn> {
+  return listen<string>("open-preview", (event) => handler(event.payload));
+}

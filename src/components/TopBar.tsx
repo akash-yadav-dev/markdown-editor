@@ -1,4 +1,4 @@
-import { Code2, Columns2, Eye, FolderOpen, Palette, Rows2, Save } from "lucide-react";
+import { Code2, Columns2, Eye, FolderOpen, Palette, Redo2, Rows2, Save, Undo2 } from "lucide-react";
 
 import type { ThemeName, ViewMode } from "../types";
 import "./TopBar.css";
@@ -8,6 +8,10 @@ interface TopBarProps {
   theme: ThemeName;
   onOpen: () => void;
   onSave: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
   onViewModeChange: (mode: ViewMode) => void;
   onThemeChange: (theme: ThemeName) => void;
 }
@@ -26,6 +30,10 @@ export function TopBar({
   theme,
   onOpen,
   onSave,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
   onViewModeChange,
   onThemeChange,
 }: TopBarProps) {
@@ -42,6 +50,12 @@ export function TopBar({
         <button type="button" className="toolbar-button" onClick={onSave} title="Save (Ctrl+S)">
           <Save size={16} strokeWidth={2} aria-hidden="true" />
           <span>Save</span>
+        </button>
+        <button type="button" className="toolbar-button toolbar-icon-button" onClick={onUndo} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
+          <Undo2 size={16} strokeWidth={2} aria-hidden="true" />
+        </button>
+        <button type="button" className="toolbar-button toolbar-icon-button" onClick={onRedo} disabled={!canRedo} title="Redo (Ctrl+Y)" aria-label="Redo">
+          <Redo2 size={16} strokeWidth={2} aria-hidden="true" />
         </button>
         <div className="view-mode-group" role="group" aria-label="View mode">
           {VIEW_MODE_OPTIONS.map(({ mode, label, icon: Icon }) => (

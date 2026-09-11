@@ -15,8 +15,9 @@ The whole installer is about 1.6 MB.
 - **Three themes** — light, dark, and sepia.
 - **File associations** — double-click a `.md` file, or use "Open with". If the app is already
   running, the file opens in a new tab in the existing window instead of launching a second copy.
-- **Session restore** — reopens the files you had open last time.
+- **Session restore** — reopens saved files and recovers local unsaved drafts.
 - **Unsaved-change guards** — closing a tab or the window prompts before discarding edits.
+- **Preview windows** — run `markdown-editor --preview path\to\file.md` to open a live, read-only preview in a separate window.
 
 Everything happens on your machine. The app makes no network requests, and raw HTML embedded in a
 Markdown document is never rendered (`markdown-it` runs with `html: false`), so opening an
@@ -47,6 +48,9 @@ present too; if not, the installer will prompt for it.
 | `Ctrl+1` … `Ctrl+9` | Jump to tab by position |
 | `Ctrl+F` | Find |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+
+From a terminal, pass a Markdown path to open it in the editor. Add `--preview` to open a separate
+read-only preview window that refreshes as the file changes.
 
 Middle-clicking a tab closes it.
 

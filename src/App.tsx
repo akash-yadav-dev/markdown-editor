@@ -8,12 +8,13 @@ import { confirmDiscard, showError } from "./services/dialogService";
 import {
   getStartupFile,
   onFileOpenRequested,
+  onPreviewRequested,
   openFileDialog,
   readFileAtPath,
   saveFile,
   saveFileAs,
 } from "./services/fileService";
-import { onCloseRequested, setWindowTitle } from "./services/windowService";
+import { onCloseRequested, openPreviewWindow, setWindowTitle } from "./services/windowService";
 import { getFileName } from "./utils/path";
 import type { Tab, ThemeName, ViewMode } from "./types";
 import "./App.css";
@@ -30,11 +31,19 @@ const LEGACY_LAST_FILE_KEY = "markdown-editor.lastFile";
 
 const VIEW_MODES: ViewMode[] = ["code", "preview", "split-side-by-side", "split-stacked"];
 
-const UNTITLED = "Untitled.md";
+const UNTITLED_FALLBACK = "Untitled 1.md";
 
 interface StoredSession {
-  paths: string[];
+  paths?: string[];
+  entries?: StoredEntry[];
   activeIndex: number;
+}
+
+interface StoredEntry {
+  path: string | null;
+  untitledName: string | null;
+  content?: string;
+  isDirty?: boolean;
 }
 
 function loadStoredTheme(): ThemeName {
@@ -60,7 +69,11 @@ function loadStoredSession(): StoredSession {
       const paths = Array.isArray(parsed.paths)
         ? parsed.paths.filter((path): path is string => typeof path === "string")
         : [];
-      return { paths, activeIndex: typeof parsed.activeIndex === "number" ? parsed.activeIndex : 0 };
+      return {
+        paths,
+        entries: Array.isArray(parsed.entries) ? parsed.entries as StoredEntry[] : undefined,
+        activeIndex: typeof parsed.activeIndex === "number" ? parsed.activeIndex : 0,
+      };
     } catch {
       // Corrupt session; fall through to the pre-tabs single-file key.
     }
@@ -74,16 +87,68 @@ function showsPreview(mode: ViewMode): boolean {
 }
 
 function tabLabel(tab: Tab): string {
-  return tab.path ? getFileName(tab.path) : UNTITLED;
+  return tab.path ? getFileName(tab.path) : tab.untitledName ?? UNTITLED_FALLBACK;
 }
 
 let tabSequence = 0;
-function createTab(path: string | null): Tab {
+let untitledSequence = 0;
+function createTab(path: string | null, untitledName?: string | null): Tab {
   tabSequence += 1;
-  return { id: `tab-${tabSequence}`, path, isDirty: false };
+  if (path === null && !untitledName) {
+    untitledSequence += 1;
+    untitledName = `Untitled ${untitledSequence}.md`;
+  }
+  return { id: `tab-${tabSequence}`, path, untitledName: path ? null : untitledName ?? UNTITLED_FALLBACK, isDirty: false };
 }
 
 export default function App() {
+  const previewPath = new URLSearchParams(window.location.search).get("previewPath");
+  if (previewPath) return <PreviewWindow path={previewPath} />;
+  return <EditorApp />;
+}
+
+function PreviewWindow({ path }: { path: string }) {
+  const [theme] = useState<ThemeName>(loadStoredTheme);
+  const [content, setContent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      setContent(await readFileAtPath(path));
+      setError(null);
+    } catch (nextError) {
+      setError(String(nextError));
+    }
+  }, [path]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 750);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
+  useEffect(() => {
+    void setWindowTitle(`${getFileName(path)} — Markdown Preview`);
+  }, [path]);
+
+  return (
+    <div className="preview-window">
+      <header className="preview-window-bar">
+        <span className="preview-window-title">{getFileName(path)}</span>
+        <button type="button" className="toolbar-button" onClick={() => void refresh()} title="Refresh preview">
+          Refresh
+        </button>
+      </header>
+      {error ? <div className="preview-window-error">Could not read this file. {error}</div> : content !== null ? <Suspense fallback={<div className="preview-window-loading">Loading preview…</div>}><Preview content={content} basePath={path} /></Suspense> : <div className="preview-window-loading">Loading preview…</div>}
+    </div>
+  );
+}
+
+function EditorApp() {
   const [theme, setTheme] = useState<ThemeName>(loadStoredTheme);
   const [viewMode, setViewMode] = useState<ViewMode>(loadStoredViewMode);
   const [splitRatio, setSplitRatio] = useState<number>(loadStoredSplitRatio);
@@ -91,6 +156,9 @@ export default function App() {
   const [tabs, setTabs] = useState<Tab[]>(() => [firstTab]);
   const [activeId, setActiveId] = useState(firstTab.id);
   const [previewSource, setPreviewSource] = useState("");
+  const [history, setHistory] = useState({ canUndo: false, canRedo: false });
+  const [sessionRevision, setSessionRevision] = useState(0);
+  const sessionReadyRef = useRef(false);
 
   const editorRef = useRef<EditorHandle>(null);
   // Text for tabs the editor has not built a document for yet. A tab opened in the
@@ -126,15 +194,23 @@ export default function App() {
     void setWindowTitle(`${activeTab.isDirty ? "● " : ""}${tabLabel(activeTab)} — Markdown Editor`);
   }, [activeTab]);
 
-  // Only saved files can be restored, so untitled tabs are left out of the session.
   useEffect(() => {
-    const paths = tabs.map((tab) => tab.path).filter((path): path is string => path !== null);
-    const activeIndex = activeTab.path ? paths.indexOf(activeTab.path) : 0;
-    localStorage.setItem(
-      SESSION_STORAGE_KEY,
-      JSON.stringify({ paths, activeIndex: Math.max(activeIndex, 0) } satisfies StoredSession),
-    );
-  }, [tabs, activeTab]);
+    if (!sessionReadyRef.current) return;
+    const entries: StoredEntry[] = tabs.map((tab) => ({
+      path: tab.path,
+      untitledName: tab.untitledName,
+      content: tab.path === null ? editorRef.current?.getContent(tab.id) ?? contentSeedRef.current.get(tab.id) ?? "" : undefined,
+      isDirty: tab.isDirty,
+    }));
+    try {
+      localStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify({ entries, activeIndex: Math.max(tabs.findIndex((tab) => tab.id === activeTab.id), 0) } satisfies StoredSession),
+      );
+    } catch {
+      // A very large draft should never prevent the editor from working.
+    }
+  }, [tabs, activeTab, sessionRevision]);
 
   /** Shows `path` in a tab: focusing the one that already has it, or opening a new one. */
   const openPath = useCallback((path: string, content: string) => {
@@ -239,10 +315,19 @@ export default function App() {
 
   const handleDirty = useCallback((id: string) => {
     setTabs((prev) => prev.map((tab) => (tab.id === id && !tab.isDirty ? { ...tab, isDirty: true } : tab)));
+    setSessionRevision((revision) => revision + 1);
+  }, []);
+
+  const handleHistoryChange = useCallback((id: string, canUndo: boolean, canRedo: boolean) => {
+    if (id === activeIdRef.current) setHistory({ canUndo, canRedo });
   }, []);
 
   const handleContentChange = useCallback((id: string, content: string) => {
     if (id === activeIdRef.current && showsPreview(viewModeRef.current)) setPreviewSource(content);
+    if (tabsRef.current.find((tab) => tab.id === id)?.path === null) {
+      contentSeedRef.current.set(id, content);
+      setSessionRevision((revision) => revision + 1);
+    }
   }, []);
 
   // The editor swaps documents in its own effect, which runs before this one.
@@ -258,9 +343,17 @@ export default function App() {
     void (async () => {
       const session = loadStoredSession();
       const restored: { tab: Tab; content: string }[] = [];
-      for (const path of session.paths) {
+      const entries: StoredEntry[] = session.entries ?? (session.paths ?? []).map((path) => ({ path, untitledName: null }));
+      for (const entry of entries) {
+        const path = entry.path;
         try {
-          restored.push({ tab: createTab(path), content: await readFileAtPath(path) });
+          if (path) {
+            restored.push({ tab: createTab(path), content: await readFileAtPath(path) });
+          } else if (typeof entry.content === "string") {
+            const tab = createTab(null, entry.untitledName);
+            tab.isDirty = entry.isDirty ?? true;
+            restored.push({ tab, content: entry.content });
+          }
         } catch {
           // File moved or deleted since last run; drop it silently.
         }
@@ -269,6 +362,10 @@ export default function App() {
 
       const startup = await getStartupFile();
       if (startup) {
+        if (startup.preview) {
+          openPreviewWindow(startup.path);
+          return;
+        }
         const alreadyOpen = restored.findIndex((entry) => entry.tab.path === startup.path);
         if (alreadyOpen >= 0) {
           restored[alreadyOpen].content = startup.content;
@@ -279,13 +376,17 @@ export default function App() {
         }
       }
 
-      if (restored.length === 0) return;
+      if (restored.length === 0) {
+        sessionReadyRef.current = true;
+        return;
+      }
 
       for (const entry of restored) contentSeedRef.current.set(entry.tab.id, entry.content);
       editorRef.current?.releaseDoc(firstTab.id);
       contentSeedRef.current.delete(firstTab.id);
       setTabs(restored.map((entry) => entry.tab));
       setActiveId(restored[activeIndex].tab.id);
+      sessionReadyRef.current = true;
     })();
   }, [firstTab.id]);
 
@@ -306,6 +407,14 @@ export default function App() {
     });
     return () => unlisten?.();
   }, [openPath]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void onPreviewRequested((path) => openPreviewWindow(path)).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -370,6 +479,10 @@ export default function App() {
         theme={theme}
         onOpen={() => void handleOpen()}
         onSave={() => void saveTab(activeIdRef.current)}
+        onUndo={() => editorRef.current?.undo()}
+        onRedo={() => editorRef.current?.redo()}
+        canUndo={history.canUndo}
+        canRedo={history.canRedo}
         onViewModeChange={handleViewModeChange}
         onThemeChange={setTheme}
       />
@@ -392,13 +505,14 @@ export default function App() {
               initialContent={contentSeedRef.current.get(activeTab.id) ?? ""}
               theme={theme}
               onDirty={handleDirty}
-              onChangeContent={showsPreview(viewMode) ? handleContentChange : undefined}
+              onHistoryChange={handleHistoryChange}
+              onChangeContent={handleContentChange}
             />
           }
           second={
             hasShownPreviewRef.current ? (
               <Suspense fallback={null}>
-                <Preview content={previewSource} />
+                <Preview content={previewSource} basePath={activeTab.path ?? undefined} />
               </Suspense>
             ) : undefined
           }
